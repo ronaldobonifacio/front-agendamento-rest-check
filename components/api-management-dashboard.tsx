@@ -10,9 +10,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Plus, Play, Settings, MessageSquare, AlertCircle, Eye, EyeOff } from "lucide-react"
+import { Trash2, Plus, Play, Settings, MessageSquare, AlertCircle, Eye, EyeOff, Calendar } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { VisualScheduleModal } from "./visual-schedule-modal"
 
 interface ApiHeader {
   key: string
@@ -32,6 +40,8 @@ interface ApiData {
   isOnline?: boolean
   responseTime?: number
   lastRun?: string
+  scheduleGroupId?: string
+  schedule?: { [day: number]: string[] }
 }
 
 interface ServiceState {
@@ -106,8 +116,8 @@ export default function ApiManagementDashboard() {
     enabled: true,
   })
 
-  const [scheduleGroups, setScheduleGroups] = useState<any[]>([]);
-  const [selectedScheduleGroupId, setSelectedScheduleGroupId] = useState<string | null>("none");
+  const [scheduleGroups, setScheduleGroups] = useState<any[]>([])
+  const [selectedScheduleGroupId, setSelectedScheduleGroupId] = useState<string | null>("none")
 
   // Adicione constantes para dias da semana
   const WEEK_DAYS = [
@@ -118,7 +128,7 @@ export default function ApiManagementDashboard() {
     { value: 4, label: "Quinta" },
     { value: 5, label: "Sexta" },
     { value: 6, label: "Sábado" },
-  ];
+  ]
 
   // Novo estado para o calendário de agendamento
   const [schedule, setSchedule] = useState<{ [day: number]: string[] }>({
@@ -127,19 +137,21 @@ export default function ApiManagementDashboard() {
     3: ["08:00", "14:00"], // Quarta
     4: ["08:00", "14:00"], // Quinta
     5: ["08:00", "14:00"], // Sexta
-  });
+  })
+
+  const [isVisualScheduleOpen, setIsVisualScheduleOpen] = useState(false)
 
   // Função para gerar crons do calendário
   function generateCronsFromSchedule(schedule: { [day: number]: string[] }) {
-    const crons: string[] = [];
+    const crons: string[] = []
     Object.entries(schedule).forEach(([day, times]) => {
-      times.forEach(time => {
-        const [hour, minute] = time.split(":");
-        crons.push(`${minute} ${hour} * * ${day}`);
-      });
-    });
-    return crons;
-  };
+      times.forEach((time) => {
+        const [hour, minute] = time.split(":")
+        crons.push(`${minute} ${hour} * * ${day}`)
+      })
+    })
+    return crons
+  }
 
   const fetchStatus = async () => {
     try {
@@ -202,8 +214,8 @@ export default function ApiManagementDashboard() {
         setServiceState((prev) => ({
           ...prev,
           apis: selectedApi
-            ? prev.apis.map((api) => (api.id === selectedApi.id ? apiData : api))
-            : [...prev.apis, apiData],
+            ? prev.apis.map((api) => (api.id === selectedApi.id ? { ...apiData, scheduleGroupId: apiData.scheduleGroupId ?? undefined } : api))
+            : [...prev.apis, { ...apiData, scheduleGroupId: apiData.scheduleGroupId ?? undefined }],
         }))
       }
 
@@ -287,7 +299,11 @@ export default function ApiManagementDashboard() {
       if (data.ok && data.sent) {
         toast({ title: "WhatsApp", description: "Mensagem de rotas offline enviada com sucesso!", variant: "default" })
       } else {
-        toast({ title: "WhatsApp", description: data.message || "Nenhuma rota offline para enviar.", variant: "secondary" })
+        toast({
+          title: "WhatsApp",
+          description: data.message || "Nenhuma rota offline para enviar.",
+          variant: "default",
+        })
       }
     } catch (error) {
       toast({ title: "WhatsApp", description: "Erro ao enviar mensagem de rotas offline.", variant: "destructive" })
@@ -311,14 +327,14 @@ export default function ApiManagementDashboard() {
       { key: "Cache-Control", value: "no-cache", enabled: false },
       { key: "User-Agent", value: "API-Monitor/1.0", enabled: true },
     ])
-    setSelectedScheduleGroupId("none");
+    setSelectedScheduleGroupId("none")
     setSchedule({
       1: ["08:00", "14:00"],
       2: ["08:00", "14:00"],
       3: ["08:00", "14:00"],
       4: ["08:00", "14:00"],
       5: ["08:00", "14:00"],
-    });
+    })
   }
 
   const addHeader = () => {
@@ -354,14 +370,16 @@ export default function ApiManagementDashboard() {
       }
     }
 
-    setSelectedScheduleGroupId(api.scheduleGroupId || "none");
-    setSchedule(api.schedule || {
-      1: ["08:00", "14:00"],
-      2: ["08:00", "14:00"],
-      3: ["08:00", "14:00"],
-      4: ["08:00", "14:00"],
-      5: ["08:00", "14:00"],
-    });
+    setSelectedScheduleGroupId(api.scheduleGroupId || "none")
+    setSchedule(
+      api.schedule || {
+        1: ["08:00", "14:00"],
+        2: ["08:00", "14:00"],
+        3: ["08:00", "14:00"],
+        4: ["08:00", "14:00"],
+        5: ["08:00", "14:00"],
+      },
+    )
   }
 
   const handleAuthTypeChange = (newAuthType: string) => {
@@ -392,19 +410,19 @@ export default function ApiManagementDashboard() {
 
   const fetchScheduleGroups = async () => {
     try {
-      const res = await fetch("http://localhost:8033/schedule-group/list");
-      const data = await res.json();
-      setScheduleGroups(data.groups || []);
+      const res = await fetch("http://localhost:8033/schedule-group/list")
+      const data = await res.json()
+      setScheduleGroups(data.groups || [])
     } catch (error) {
-      setScheduleGroups([]);
+      setScheduleGroups([])
     }
   }
 
   useEffect(() => {
-    fetchStatus();
-    fetchScheduleGroups();
-    const interval = setInterval(fetchStatus, 30000);
-    return () => clearInterval(interval);
+    fetchStatus()
+    fetchScheduleGroups()
+    const interval = setInterval(fetchStatus, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -554,13 +572,19 @@ export default function ApiManagementDashboard() {
 
         {/* API Editor Dialog */}
         {isEditing && (
-          <Dialog open={isEditing} onOpenChange={open => { if (!open) { setIsEditing(false); resetForm(); } }}>
-            <DialogContent>
+          <Dialog
+            open={isEditing}
+            onOpenChange={(open) => {
+              if (!open) {
+                setIsEditing(false)
+                resetForm()
+              }
+            }}
+          >
+            <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{selectedApi ? "Editar API" : "Nova API"}</DialogTitle>
-                <DialogDescription>
-                  Configure os dados da API e o agendamento visualmente.
-                </DialogDescription>
+                <DialogDescription>Configure os dados da API e o agendamento.</DialogDescription>
               </DialogHeader>
               <div className="space-y-6">
                 {/* Basic Info */}
@@ -578,7 +602,10 @@ export default function ApiManagementDashboard() {
 
                 {/* Request Configuration */}
                 <div className="flex gap-2">
-                  <Select value={formData.method} onValueChange={(value) => setFormData({ ...formData, method: value })}>
+                  <Select
+                    value={formData.method}
+                    onValueChange={(value) => setFormData({ ...formData, method: value })}
+                  >
                     <SelectTrigger className="w-32">
                       <SelectValue />
                     </SelectTrigger>
@@ -598,57 +625,29 @@ export default function ApiManagementDashboard() {
                   />
                 </div>
 
-                {/* Calendário Semanal de Agendamento */}
                 <div>
-                  <Label>Agendamento (Calendário Semanal)</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    {WEEK_DAYS.map(day => (
-                      <div key={day.value} className="border rounded-lg p-2">
-                        <div className="font-semibold mb-2">{day.label}</div>
-                        {(schedule[day.value] || []).map((time, idx) => (
-                          <div key={idx} className="flex items-center gap-1 mb-1">
-                            <Input
-                              type="time"
-                              value={time}
-                              onChange={e => {
-                                const newTimes = [...(schedule[day.value] || [])];
-                                newTimes[idx] = e.target.value;
-                                setSchedule({ ...schedule, [day.value]: newTimes });
-                              }}
-                              className="w-20"
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const newTimes = (schedule[day.value] || []).filter((_, i) => i !== idx);
-                                setSchedule({ ...schedule, [day.value]: newTimes });
-                              }}
-                            >✕</Button>
-                          </div>
-                        ))}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-1"
-                          onClick={() => {
-                            setSchedule({
-                              ...schedule,
-                              [day.value]: [...(schedule[day.value] || []), "08:00"]
-                            });
-                          }}
-                        >+ Horário</Button>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between mb-4">
+                    <Label htmlFor="cron">Agendamento (Cron)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsVisualScheduleOpen(true)}
+                      className="bg-primary/10 hover:bg-primary/20 text-primary border-primary/30"
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Visual
+                    </Button>
                   </div>
-                  <div className="text-xs text-muted-foreground mb-2">
-                    <strong>Expressões cron geradas:</strong>
-                    <ul>
-                      {generateCronsFromSchedule(schedule).map((cron, idx) => (
-                        <li key={idx}>{cron}</li>
-                      ))}
-                    </ul>
-                  </div>
+                  <Input
+                    id="cron"
+                    value={formData.cron}
+                    onChange={(e) => setFormData({ ...formData, cron: e.target.value })}
+                    placeholder="*/10 * * * * (a cada 10 minutos)"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use o botão "Visual" para configurar horários específicos ou digite uma expressão cron manualmente
+                  </p>
                 </div>
 
                 {/* Grupo de Agendamento */}
@@ -840,6 +839,16 @@ export default function ApiManagementDashboard() {
             </DialogContent>
           </Dialog>
         )}
+
+        <VisualScheduleModal
+          isOpen={isVisualScheduleOpen}
+          onClose={() => setIsVisualScheduleOpen(false)}
+          schedule={schedule}
+          onScheduleChange={setSchedule}
+          onScheduleSave={(cronExpression) => {
+            setFormData({ ...formData, cron: cronExpression })
+          }}
+        />
       </div>
     </div>
   )
