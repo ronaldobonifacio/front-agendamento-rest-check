@@ -570,6 +570,30 @@ export default function ApiManagementDashboard() {
     }
   }
 
+  const updateNotificationInterval = async (interval: number) => {
+    if (!isConnected) {
+      setServiceState((prev) => ({
+        ...prev,
+        notificationInterval: interval,
+      }))
+      return
+    }
+
+    try {
+      const response = await fetch("http://localhost:8033/update-notification-interval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval }),
+      })
+
+      if (!response.ok) throw new Error("Falha ao atualizar intervalo")
+
+      await fetchStatus()
+    } catch (error) {
+      console.error("Erro ao atualizar intervalo:", error)
+    }
+  }
+
   useEffect(() => {
     fetchStatus()
     fetchScheduleGroups()
