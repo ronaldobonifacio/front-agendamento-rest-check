@@ -133,7 +133,7 @@ export function VisualScheduleModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto glass-effect modal-enter">
+      <DialogContent className="w-[70vw] max-h-[85vh] overflow-y-auto">
         <DialogHeader className="space-y-3">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
@@ -294,7 +294,7 @@ export function VisualScheduleModal({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    const everyHour: { [key: number]: string[] } = {}
+                    const everyHour = {}
                     WEEK_DAYS.slice(0, 5).forEach((day) => {
                       everyHour[day.value] = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"]
                     })

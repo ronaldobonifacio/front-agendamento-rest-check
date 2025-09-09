@@ -31,8 +31,11 @@ interface ApiHeader {
 interface ApiData {
   id?: string
   name: string
+  type?: "API" | "PING" // Added type field for API or PING monitoring
   method: string
   url: string
+  host?: string // Added host field for ping monitoring
+  port?: number // Added port field for ping monitoring
   headers?: string
   body?: string
   cron: string
@@ -41,7 +44,6 @@ interface ApiData {
   responseTime?: number
   lastRun?: string
   scheduleGroupId?: string
-  schedule?: { [day: number]: string[] }
 }
 
 interface ServiceState {
@@ -51,6 +53,7 @@ interface ServiceState {
   nextRunTimestamp: string
   lastFailedApis: string[]
   apis: ApiData[]
+  notificationInterval: number
 }
 
 const MOCK_DATA: ServiceState = {
@@ -58,11 +61,13 @@ const MOCK_DATA: ServiceState = {
   lastRunTimestamp: "01/09/2025, 14:30:15",
   lastRunStatus: "✅ Todas as APIs estão operacionais.",
   nextRunTimestamp: "01/09/2025, 14:40:15",
+  notificationInterval: 10,
   lastFailedApis: [],
   apis: [
     {
       id: "1",
       name: "API de Usuários",
+      type: "API",
       method: "GET",
       url: "https://jsonplaceholder.typicode.com/users",
       headers: '{"Content-Type": "application/json"}',
@@ -76,6 +81,7 @@ const MOCK_DATA: ServiceState = {
     {
       id: "2",
       name: "API de Posts",
+      type: "API",
       method: "GET",
       url: "https://jsonplaceholder.typicode.com/posts",
       headers: '{"Content-Type": "application/json"}',
@@ -97,6 +103,8 @@ export default function ApiManagementDashboard() {
   const [connectionError, setConnectionError] = useState<string | null>(null)
 
   const [authType, setAuthType] = useState<string>("none")
+  const [apiKeyConfig, setApiKeyConfig] = useState({ key: "", value: "", addTo: "header" })
+  const [bearerToken, setBearerToken] = useState("")
   const [basicAuth, setBasicAuth] = useState({ username: "", password: "" })
   const [showPassword, setShowPassword] = useState(false)
 
@@ -108,8 +116,11 @@ export default function ApiManagementDashboard() {
 
   const [formData, setFormData] = useState<ApiData>({
     name: "",
+    type: "API", // Default to API type
     method: "GET",
     url: "",
+    host: "", // Added host field
+    port: undefined, // Added port field
     headers: "",
     body: "",
     cron: "*/10 * * * *",
@@ -140,8 +151,8 @@ export default function ApiManagementDashboard() {
   })
 
   const [isVisualScheduleOpen, setIsVisualScheduleOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState("headers")
 
-  // Função para gerar crons do calendário
   function generateCronsFromSchedule(schedule: { [day: number]: string[] }) {
     const crons: string[] = []
     Object.entries(schedule).forEach(([day, times]) => {
@@ -150,7 +161,7 @@ export default function ApiManagementDashboard() {
         crons.push(`${minute} ${hour} * * ${day}`)
       })
     })
-    return crons
+    return crons.join(";") // Backend expects semicolon-separated crons
   }
 
   const fetchStatus = async () => {
@@ -190,33 +201,87 @@ export default function ApiManagementDashboard() {
 
   const saveApi = async () => {
     try {
-      const headersObj = headers
-        .filter((h) => h.enabled && h.key && h.value)
-        .reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {})
+      if (formData.type === "PING") {
+        if (!formData.host || !formData.port) {
+          toast({
+            title: "Erro de Validação",
+            description: "Host e porta são obrigatórios para monitoramento de ping",
+            variant: "destructive",
+          })
+          return
+        }
+      } else if (formData.type === "API") {
+        if (!formData.url) {
+          toast({
+            title: "Erro de Validação",
+            description: "URL é obrigatória para monitoramento de API",
+            variant: "destructive",
+          })
+          return
+        }
+      }
 
+      // Process authentication headers (only for API type)
+      const authHeaders: { [key: string]: string } = {}
+
+      if (formData.type === "API") {
+        if (authType === "apikey" && apiKeyConfig.key && apiKeyConfig.value) {
+          if (apiKeyConfig.addTo === "header") {
+            authHeaders[apiKeyConfig.key] = apiKeyConfig.value
+          }
+        } else if (authType === "bearer" && bearerToken) {
+          authHeaders["Authorization"] = `Bearer ${bearerToken}`
+        } else if (authType === "basic" && basicAuth.username && basicAuth.password) {
+          const credentials = btoa(`${basicAuth.username}:${basicAuth.password}`)
+          authHeaders["Authorization"] = `Basic ${credentials}`
+        }
+      }
+
+      // Combine regular headers with auth headers (only for API type)
+      const regularHeaders =
+        formData.type === "API"
+          ? headers.filter((h) => h.enabled && h.key && h.value).reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {})
+          : {}
+
+      const allHeaders = { ...regularHeaders, ...authHeaders }
+
+      // Prepare API data in backend format
       const apiData = {
         ...formData,
-        id: selectedApi?.id || Date.now().toString(),
-        headers: JSON.stringify(headersObj),
-        scheduleGroupId: selectedScheduleGroupId,
-        cron: generateCronsFromSchedule(schedule).join(";"),
-        schedule, // salva o calendário completo
+        id: selectedApi?.id, // Let backend generate ID if not provided
+        headers: formData.type === "API" ? JSON.stringify(allHeaders) : undefined,
+        body: formData.type === "API" ? formData.body || "" : undefined, // Only for API type
+        cron: generateCronsFromSchedule(schedule), // Convert to backend format
+        scheduleGroupId: selectedScheduleGroupId === "none" ? undefined : selectedScheduleGroupId,
       }
 
       if (isConnected) {
-        await fetch("http://localhost:8033/api/add", {
+        const response = await fetch("http://localhost:8033/api/add", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(apiData),
         })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const result = await response.json()
+        if (!result.ok) {
+          throw new Error(result.error || "Erro ao salvar API")
+        }
+
         fetchStatus()
+        toast({ title: "Sucesso", description: "API salva com sucesso!", variant: "default" })
       } else {
+        // Mock mode
         setServiceState((prev) => ({
           ...prev,
           apis: selectedApi
-            ? prev.apis.map((api) => (api.id === selectedApi.id ? { ...apiData, scheduleGroupId: apiData.scheduleGroupId ?? undefined } : api))
-            : [...prev.apis, { ...apiData, scheduleGroupId: apiData.scheduleGroupId ?? undefined }],
+            ? prev.apis.map((api) => (api.id === selectedApi.id ? { ...apiData, id: selectedApi.id } : api))
+            : [...prev.apis, { ...apiData, id: Date.now().toString() }],
         }))
+        toast({ title: "Modo Demo", description: "API salva localmente (modo demonstração)", variant: "default" })
       }
 
       setIsEditing(false)
@@ -224,40 +289,70 @@ export default function ApiManagementDashboard() {
       resetForm()
     } catch (error) {
       console.error("Erro ao salvar API:", error)
+      toast({ title: "Erro", description: "Falha ao salvar API: " + error.message, variant: "destructive" })
     }
   }
 
   const deleteApi = async (id: string) => {
     if (isConnected) {
       try {
-        await fetch("http://localhost:8033/api/delete", {
+        const response = await fetch("http://localhost:8033/api/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id }),
         })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const result = await response.json()
+        if (!result.ok) {
+          throw new Error(result.error || "Erro ao deletar API")
+        }
+
         fetchStatus()
+        toast({ title: "Sucesso", description: "API deletada com sucesso!", variant: "default" })
       } catch (error) {
         console.error("Erro ao deletar API:", error)
+        toast({ title: "Erro", description: "Falha ao deletar API: " + error.message, variant: "destructive" })
       }
     } else {
       setServiceState((prev) => ({
         ...prev,
         apis: prev.apis.filter((api) => api.id !== id),
       }))
+      toast({ title: "Modo Demo", description: "API deletada localmente (modo demonstração)", variant: "default" })
     }
   }
 
   const testApi = async (id: string) => {
     if (isConnected) {
       try {
-        await fetch("http://localhost:8033/api/test", {
+        const response = await fetch("http://localhost:8033/api/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id }),
         })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const result = await response.json()
+        if (result.ok) {
+          const typeLabel = result.result.type === "PING" ? "Ping" : "API"
+          toast({
+            title: "Teste Concluído",
+            description: `${result.result.api} (${typeLabel}): ${result.result.online ? "Online" : "Offline"} (${result.result.responseTime}ms)`,
+            variant: result.result.online ? "default" : "destructive",
+          })
+        }
+
         setTimeout(fetchStatus, 2000)
       } catch (error) {
         console.error("Erro ao testar API:", error)
+        toast({ title: "Erro", description: "Falha ao testar API: " + error.message, variant: "destructive" })
       }
     } else {
       setServiceState((prev) => ({
@@ -302,7 +397,7 @@ export default function ApiManagementDashboard() {
         toast({
           title: "WhatsApp",
           description: data.message || "Nenhuma rota offline para enviar.",
-          variant: "default",
+          variant: "secondary",
         })
       }
     } catch (error) {
@@ -313,14 +408,19 @@ export default function ApiManagementDashboard() {
   const resetForm = () => {
     setFormData({
       name: "",
+      type: "API",
       method: "GET",
       url: "",
+      host: "",
+      port: undefined,
       headers: "",
       body: "",
       cron: "*/10 * * * *",
       enabled: true,
     })
     setAuthType("none")
+    setApiKeyConfig({ key: "", value: "", addTo: "header" })
+    setBearerToken("")
     setBasicAuth({ username: "", password: "" })
     setHeaders([
       { key: "Content-Type", value: "application/json", enabled: true },
@@ -356,9 +456,54 @@ export default function ApiManagementDashboard() {
     setFormData(api)
     setIsEditing(true)
 
+    // Parse headers and detect authentication
     if (api.headers) {
       try {
         const parsedHeaders = JSON.parse(api.headers)
+
+        // Detect auth type from headers
+        if (parsedHeaders.Authorization) {
+          const authHeader = parsedHeaders.Authorization
+          if (authHeader.startsWith("Bearer ")) {
+            setAuthType("bearer")
+            setBearerToken(authHeader.substring(7))
+            delete parsedHeaders.Authorization // Remove from regular headers
+          } else if (authHeader.startsWith("Basic ")) {
+            setAuthType("basic")
+            try {
+              const credentials = atob(authHeader.substring(6))
+              const [username, password] = credentials.split(":")
+              setBasicAuth({ username, password })
+            } catch (e) {
+              console.warn("Could not decode basic auth credentials")
+            }
+            delete parsedHeaders.Authorization // Remove from regular headers
+          }
+        } else {
+          // Check for API key patterns
+          const possibleApiKeys = ["X-API-Key", "ApiKey", "api-key", "Authorization"]
+          let foundApiKey = false
+
+          for (const key of possibleApiKeys) {
+            if (
+              parsedHeaders[key] &&
+              !parsedHeaders[key].startsWith("Bearer ") &&
+              !parsedHeaders[key].startsWith("Basic ")
+            ) {
+              setAuthType("apikey")
+              setApiKeyConfig({ key, value: parsedHeaders[key], addTo: "header" })
+              delete parsedHeaders[key] // Remove from regular headers
+              foundApiKey = true
+              break
+            }
+          }
+
+          if (!foundApiKey) {
+            setAuthType("none")
+          }
+        }
+
+        // Convert remaining headers to array format
         const headerArray = Object.entries(parsedHeaders).map(([key, value]) => ({
           key,
           value: value as string,
@@ -367,45 +512,52 @@ export default function ApiManagementDashboard() {
         setHeaders(headerArray)
       } catch (e) {
         console.error("Erro ao parsear headers:", e)
+        setAuthType("none")
       }
     }
 
+    // Parse cron format (backend uses semicolon-separated crons)
+    if (api.cron && api.cron.includes(";")) {
+      // Convert backend cron format back to schedule
+      const crons = api.cron.split(";")
+      const newSchedule: { [day: number]: string[] } = {}
+
+      crons.forEach((cronExp) => {
+        const parts = cronExp.trim().split(" ")
+        if (parts.length >= 5) {
+          const minute = parts[0]
+          const hour = parts[1]
+          const dayOfWeek = parts[4]
+
+          if (!isNaN(Number.parseInt(dayOfWeek))) {
+            const day = Number.parseInt(dayOfWeek)
+            const time = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`
+
+            if (!newSchedule[day]) {
+              newSchedule[day] = []
+            }
+            newSchedule[day].push(time)
+          }
+        }
+      })
+
+      setSchedule(newSchedule)
+    }
+
     setSelectedScheduleGroupId(api.scheduleGroupId || "none")
-    setSchedule(
-      api.schedule || {
-        1: ["08:00", "14:00"],
-        2: ["08:00", "14:00"],
-        3: ["08:00", "14:00"],
-        4: ["08:00", "14:00"],
-        5: ["08:00", "14:00"],
-      },
-    )
   }
 
   const handleAuthTypeChange = (newAuthType: string) => {
     setAuthType(newAuthType)
-
-    // Remove existing Authorization header
-    const filteredHeaders = headers.filter((h) => h.key !== "Authorization")
-
-    if (newAuthType === "basic" && basicAuth.username && basicAuth.password) {
-      // Add Authorization header for Basic Auth
-      const credentials = btoa(`${basicAuth.username}:${basicAuth.password}`)
-      setHeaders([{ key: "Authorization", value: `Basic ${credentials}`, enabled: true }, ...filteredHeaders])
-    } else {
-      setHeaders(filteredHeaders)
-    }
+    // Clear all auth fields when changing type
+    setApiKeyConfig({ key: "", value: "", addTo: "header" })
+    setBearerToken("")
+    setBasicAuth({ username: "", password: "" })
   }
 
   const handleBasicAuthChange = (field: "username" | "password", value: string) => {
     const newBasicAuth = { ...basicAuth, [field]: value }
     setBasicAuth(newBasicAuth)
-
-    if (authType === "basic" && newBasicAuth.username && newBasicAuth.password) {
-      const credentials = btoa(`${newBasicAuth.username}:${newBasicAuth.password}`)
-      const filteredHeaders = headers.filter((h) => h.key !== "Authorization")
-      setHeaders([{ key: "Authorization", value: `Basic ${credentials}`, enabled: true }, ...filteredHeaders])
-    }
   }
 
   const fetchScheduleGroups = async () => {
@@ -538,6 +690,10 @@ export default function ApiManagementDashboard() {
               {serviceState.apis.map((api) => (
                 <div key={api.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-4">
+                    <div className={`w-3 h-3 rounded-full ${api.isOnline ? "bg-green-500" : "bg-red-500"}`} />
+                    <span className="text-xs text-muted-foreground">
+                      {api.type === "PING" ? "📡" : "🌐"} {api.type || "API"}
+                    </span>
                     <Badge variant={api.method === "GET" ? "default" : "secondary"}>{api.method}</Badge>
                     <div>
                       <h3 className="font-semibold">{api.name}</h3>
@@ -581,7 +737,7 @@ export default function ApiManagementDashboard() {
               }
             }}
           >
-            <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto">
+            <DialogContent className="w-[80vw] h-[80vh] min-w-[80vw] min-h-[80vh] max-w-none max-h-none overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{selectedApi ? "Editar API" : "Nova API"}</DialogTitle>
                 <DialogDescription>Configure os dados da API e o agendamento.</DialogDescription>
@@ -598,32 +754,80 @@ export default function ApiManagementDashboard() {
                       placeholder="Ex: API de Usuários"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="type">Tipo de Monitoramento</Label>
+                    <Select
+                      value={formData.type}
+                      onValueChange={(value: "API" | "PING") => setFormData({ ...formData, type: value })}
+                    >
+                      <SelectTrigger className="bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border-border">
+                        <SelectItem value="API">API REST</SelectItem>
+                        <SelectItem value="PING">Ping (TCP)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                {/* Request Configuration */}
-                <div className="flex gap-2">
-                  <Select
-                    value={formData.method}
-                    onValueChange={(value) => setFormData({ ...formData, method: value })}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GET">GET</SelectItem>
-                      <SelectItem value="POST">POST</SelectItem>
-                      <SelectItem value="PUT">PUT</SelectItem>
-                      <SelectItem value="DELETE">DELETE</SelectItem>
-                      <SelectItem value="PATCH">PATCH</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    className="flex-1"
-                    value={formData.url}
-                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                    placeholder="https://api.exemplo.com/endpoint"
-                  />
-                </div>
+                {formData.type === "API" ? (
+                  <>
+                    {/* Request Configuration for API */}
+                    <div className="flex gap-2">
+                      <Select
+                        value={formData.method}
+                        onValueChange={(value) => setFormData({ ...formData, method: value })}
+                      >
+                        <SelectTrigger className="w-32 bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border-border">
+                          <SelectItem value="GET">GET</SelectItem>
+                          <SelectItem value="POST">POST</SelectItem>
+                          <SelectItem value="PUT">PUT</SelectItem>
+                          <SelectItem value="DELETE">DELETE</SelectItem>
+                          <SelectItem value="PATCH">PATCH</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        className="flex-1"
+                        value={formData.url}
+                        onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                        placeholder="https://api.exemplo.com/endpoint"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Ping Configuration */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="host">Host/IP</Label>
+                        <Input
+                          id="host"
+                          value={formData.host || ""}
+                          onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                          placeholder="exemplo.com ou 192.168.1.1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="port">Porta</Label>
+                        <Input
+                          id="port"
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={formData.port || ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, port: Number.parseInt(e.target.value) || undefined })
+                          }
+                          placeholder="80, 443, 3306, etc."
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -657,10 +861,10 @@ export default function ApiManagementDashboard() {
                     value={selectedScheduleGroupId || "none"}
                     onValueChange={(value) => setSelectedScheduleGroupId(value === "none" ? null : value)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="bg-background">
                       <SelectValue placeholder="Selecione um grupo de agendamento" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-background border-border">
                       {scheduleGroups.map((group) => (
                         <SelectItem key={group.id} value={group.id}>
                           {group.name}
@@ -671,95 +875,150 @@ export default function ApiManagementDashboard() {
                   </Select>
                 </div>
 
-                {/* Tabs para configuração detalhada */}
-                <Tabs defaultValue="headers" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="headers">Headers</TabsTrigger>
-                    <TabsTrigger value="auth">Authorization</TabsTrigger>
-                    <TabsTrigger value="body">Body</TabsTrigger>
-                    <TabsTrigger value="settings">Settings</TabsTrigger>
-                  </TabsList>
+                {formData.type === "API" && (
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="grid w-full grid-cols-4">
+                      <TabsTrigger value="headers">Headers</TabsTrigger>
+                      <TabsTrigger value="authorization">Authorization</TabsTrigger>
+                      <TabsTrigger value="body">Body</TabsTrigger>
+                      <TabsTrigger value="settings">Settings</TabsTrigger>
+                    </TabsList>
 
-                  <TabsContent value="headers" className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Headers</h3>
-                      <Button variant="outline" size="sm" onClick={addHeader}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Adicionar Header
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {headers.map((header, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Switch
-                            checked={header.enabled}
-                            onCheckedChange={(checked) => updateHeader(index, "enabled", checked)}
-                          />
-                          <Input
-                            placeholder="Key"
-                            value={header.key}
-                            onChange={(e) => updateHeader(index, "key", e.target.value)}
-                            className="flex-1"
-                          />
-                          <Input
-                            placeholder="Value"
-                            value={header.value}
-                            onChange={(e) => updateHeader(index, "value", e.target.value)}
-                            className="flex-1"
-                          />
-                          <Button variant="outline" size="sm" onClick={() => removeHeader(index)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="auth" className="space-y-4">
-                    <div>
-                      <Label>Auth Type</Label>
-                      <Select value={authType} onValueChange={handleAuthTypeChange}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No Auth</SelectItem>
-                          <SelectItem value="basic">Basic Auth</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {authType === "none" && (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                          <span className="text-2xl">🔓</span>
-                        </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No Auth</h3>
-                        <p className="text-sm text-gray-500">This request does not use any authorization.</p>
+                    <TabsContent value="headers" className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold">Headers</h3>
+                        <Button variant="outline" size="sm" onClick={addHeader}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Adicionar Header
+                        </Button>
                       </div>
-                    )}
-
-                    {authType === "basic" && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="username">Username</Label>
-                            <Input
-                              id="username"
-                              value={basicAuth.username}
-                              onChange={(e) => handleBasicAuthChange("username", e.target.value)}
-                              placeholder="Enter username"
+                      <div className="space-y-2">
+                        {headers.map((header, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Switch
+                              checked={header.enabled}
+                              onCheckedChange={(checked) => updateHeader(index, "enabled", checked)}
                             />
+                            <Input
+                              placeholder="Key"
+                              value={header.key}
+                              onChange={(e) => updateHeader(index, "key", e.target.value)}
+                              className="flex-1"
+                            />
+                            <Input
+                              placeholder="Value"
+                              value={header.value}
+                              onChange={(e) => updateHeader(index, "value", e.target.value)}
+                              className="flex-1"
+                            />
+                            <Button variant="outline" size="sm" onClick={() => removeHeader(index)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="authorization" className="space-y-4">
+                      <div>
+                        <Label>Auth Type</Label>
+                        <Select value={authType} onValueChange={handleAuthTypeChange}>
+                          <SelectTrigger className="bg-background">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border-border">
+                            <SelectItem value="none">No Auth</SelectItem>
+                            <SelectItem value="apikey">API Key</SelectItem>
+                            <SelectItem value="bearer">Bearer Token</SelectItem>
+                            <SelectItem value="basic">Basic Auth</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {authType === "none" && (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                            <span className="text-2xl">🔓</span>
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Auth</h3>
+                          <p className="text-sm text-gray-500">This request does not use any authorization.</p>
+                        </div>
+                      )}
+
+                      {authType === "apikey" && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="apikey-key">Key</Label>
+                              <Input
+                                id="apikey-key"
+                                value={apiKeyConfig.key}
+                                onChange={(e) => setApiKeyConfig({ ...apiKeyConfig, key: e.target.value })}
+                                placeholder="X-API-Key"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="apikey-value">Value</Label>
+                              <div className="relative">
+                                <Input
+                                  id="apikey-value"
+                                  type={showPassword ? "text" : "password"}
+                                  value={apiKeyConfig.value}
+                                  onChange={(e) => setApiKeyConfig({ ...apiKeyConfig, value: e.target.value })}
+                                  placeholder="Enter API key value"
+                                  className="pr-10"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                >
+                                  {showPassword ? (
+                                    <EyeOff className="h-4 w-4 text-gray-400" />
+                                  ) : (
+                                    <Eye className="h-4 w-4 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                           <div>
-                            <Label htmlFor="password">Password</Label>
+                            <Label>Add to</Label>
+                            <Select
+                              value={apiKeyConfig.addTo}
+                              onValueChange={(value) => setApiKeyConfig({ ...apiKeyConfig, addTo: value })}
+                            >
+                              <SelectTrigger className="bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-background border-border">
+                                <SelectItem value="header">Header</SelectItem>
+                                <SelectItem value="query">Query Params</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-sm text-blue-800">
+                              The authorization header will be automatically generated when you send the request. Learn
+                              more about <span className="underline cursor-pointer">API Key</span> authorization.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {authType === "bearer" && (
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="bearer-token">Token</Label>
                             <div className="relative">
                               <Input
-                                id="password"
+                                id="bearer-token"
                                 type={showPassword ? "text" : "password"}
-                                value={basicAuth.password}
-                                onChange={(e) => handleBasicAuthChange("password", e.target.value)}
-                                placeholder="Enter password"
+                                value={bearerToken}
+                                onChange={(e) => setBearerToken(e.target.value)}
+                                placeholder="Enter bearer token"
                                 className="pr-10"
                               />
                               <Button
@@ -777,48 +1036,96 @@ export default function ApiManagementDashboard() {
                               </Button>
                             </div>
                           </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-sm text-blue-800">
+                              The authorization header will be automatically generated when you send the request. Learn
+                              more about <span className="underline cursor-pointer">Bearer Token</span> authorization.
+                            </p>
+                          </div>
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-sm text-blue-800">
-                            <strong>
-                              The authorization header will be automatically generated when you send the request.
-                            </strong>
-                            {basicAuth.username && basicAuth.password && (
-                              <span className="block mt-1 text-xs text-blue-600">
-                                Learn more about <span className="underline cursor-pointer">Basic Auth</span>{" "}
-                                authorization
-                              </span>
-                            )}
-                          </p>
+                      )}
+
+                      {authType === "basic" && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="username">Username</Label>
+                              <Input
+                                id="username"
+                                value={basicAuth.username}
+                                onChange={(e) => setBasicAuth({ ...basicAuth, username: e.target.value })}
+                                placeholder="Enter username"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="password">Password</Label>
+                              <div className="relative">
+                                <Input
+                                  id="password"
+                                  type={showPassword ? "text" : "password"}
+                                  value={basicAuth.password}
+                                  onChange={(e) => setBasicAuth({ ...basicAuth, password: e.target.value })}
+                                  placeholder="Enter password"
+                                  className="pr-10"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                >
+                                  {showPassword ? (
+                                    <EyeOff className="h-4 w-4 text-gray-400" />
+                                  ) : (
+                                    <Eye className="h-4 w-4 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <p className="text-sm text-blue-800">
+                              <strong>
+                                The authorization header will be automatically generated when you send the request.
+                              </strong>
+                              {basicAuth.username && basicAuth.password && (
+                                <span className="block mt-1 text-xs text-blue-600">
+                                  Learn more about <span className="underline cursor-pointer">Basic Auth</span>{" "}
+                                  authorization
+                                </span>
+                              )}
+                            </p>
+                          </div>
                         </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="body" className="space-y-4">
+                      <div>
+                        <Label htmlFor="body">Request Body (JSON)</Label>
+                        <Textarea
+                          id="body"
+                          value={formData.body}
+                          onChange={(e) => setFormData({ ...formData, body: e.target.value })}
+                          placeholder='{"key": "value"}'
+                          rows={8}
+                        />
                       </div>
-                    )}
-                  </TabsContent>
+                    </TabsContent>
 
-                  <TabsContent value="body" className="space-y-4">
-                    <div>
-                      <Label htmlFor="body">Request Body (JSON)</Label>
-                      <Textarea
-                        id="body"
-                        value={formData.body}
-                        onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                        placeholder='{"key": "value"}'
-                        rows={8}
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="settings" className="space-y-4">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="enabled"
-                        checked={formData.enabled}
-                        onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
-                      />
-                      <Label htmlFor="enabled">API Habilitada</Label>
-                    </div>
-                  </TabsContent>
-                </Tabs>
+                    <TabsContent value="settings" className="space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="enabled"
+                          checked={formData.enabled}
+                          onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
+                        />
+                        <Label htmlFor="enabled">API Habilitada</Label>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                )}
 
                 {/* Actions */}
                 <DialogFooter>

@@ -4,74 +4,75 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #1e3a8a;
-  --card: #f8fafc;
-  --card-foreground: #1e3a8a;
-  --popover: #ffffff;
-  --popover-foreground: #1e3a8a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #1e3a8a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #34d399;
-  --accent-foreground: #ffffff;
-  --destructive: #f87171;
-  --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #f1f5f9;
-  --ring: rgba(37, 99, 235, 0.5);
-  --chart-1: #2563eb;
-  --chart-2: #f87171;
-  --chart-3: #34d399;
-  --chart-4: #facc15;
-  --chart-5: #f1f5f9;
+  /* Updated color tokens to match the elegant scheduling modal design brief */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.35 0 0);
+  --card: oklch(0.98 0 0);
+  --card-foreground: oklch(0.35 0 0);
+  --popover: oklch(1 0.02 0 / 0.7);
+  --popover-foreground: oklch(0.35 0 0);
+  --primary: oklch(0.45 0.15 160);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.55 0.12 160);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.97 0.01 180);
+  --muted-foreground: oklch(0.35 0 0);
+  --accent: oklch(0.55 0.12 160);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.5 0.2 15);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(1 0 0);
+  --ring: oklch(0 0 0 / 0.1);
+  --chart-1: oklch(0.45 0.15 160);
+  --chart-2: oklch(0.55 0.12 160);
+  --chart-3: oklch(0.5 0.2 15);
+  --chart-4: oklch(0.35 0 0);
+  --chart-5: oklch(0.97 0.01 180);
   --radius: 0.5rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1e3a8a;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #1e3a8a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: rgba(37, 99, 235, 0.5);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.35 0 0);
+  --sidebar-primary: oklch(0.45 0.15 160);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.55 0.12 160);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0 0 0 / 0.1);
 }
 
 .dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --card: #1e293b;
-  --card-foreground: #f8fafc;
-  --popover: #1e293b;
-  --popover-foreground: #f8fafc;
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
-  --secondary: #334155;
-  --secondary-foreground: #f8fafc;
-  --muted: #334155;
-  --muted-foreground: #94a3b8;
-  --accent: #10b981;
-  --accent-foreground: #ffffff;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #334155;
-  --input: #334155;
-  --ring: rgba(59, 130, 246, 0.5);
-  --chart-1: #3b82f6;
-  --chart-2: #ef4444;
-  --chart-3: #10b981;
-  --chart-4: #f59e0b;
-  --chart-5: #334155;
-  --sidebar: #1e293b;
-  --sidebar-foreground: #f8fafc;
-  --sidebar-primary: #3b82f6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #334155;
-  --sidebar-accent-foreground: #f8fafc;
-  --sidebar-border: #334155;
-  --sidebar-ring: rgba(59, 130, 246, 0.5);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
 }
 
 @theme inline {
@@ -121,5 +122,50 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Added glassmorphism and animation utilities for the scheduling modal */
+@layer utilities {
+  .glass-effect {
+    @apply bg-popover/80 backdrop-blur-md border border-border/50;
+  }
+
+  .schedule-slot {
+    @apply transition-all duration-200 ease-in-out hover:scale-105 hover:shadow-md;
+  }
+
+  .schedule-slot-selected {
+    @apply bg-primary text-primary-foreground shadow-lg scale-105;
+  }
+
+  .modal-enter {
+    animation: modalEnter 0.3s ease-out;
+  }
+
+  .modal-exit {
+    animation: modalExit 0.2s ease-in;
+  }
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalExit {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
   }
 }
